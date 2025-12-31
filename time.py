@@ -1,41 +1,92 @@
-from ortools.sat.python import cp_model
+batches = ["CST_3"]
 
-# Create the model
-model = cp_model.CpModel()
-
-# Decision variables
-# x[t] = 1 if class is scheduled in time slot t
-x = {
-    0: model.NewBoolVar("class_in_slot_0"),
-    1: model.NewBoolVar("class_in_slot_1")
+subjects = {
+    "NET": {
+        "type": "theory",
+        "weekly_slots": 2
+    },
+    "DBMS_LAB": {
+        "type": "lab",
+        "weekly_slots": 2
+    }
 }
 
-# -------------------
-# Hard Constraints
-# -------------------
+faculty = {
+    "Sarthak": ["NET"],
+    "Anita": ["DBMS_LAB"]
+}
 
-# Class must be scheduled in exactly one slot
-model.Add(x[0] + x[1] == 1)
+rooms = {
+    "R658": {"type": "theory", "capacity": 90},
+    "LAB1": {"type": "lab", "capacity": 30}
+}
 
-# -------------------
-# Soft Constraint
-# -------------------
+time_slots = [0, 1, 2, 3]
 
-# Prefer slot 0 (penalize slot 1)
-model.Minimize(x[1])
 
-# -------------------
-# Solve
-# -------------------
+from ortools.sat.python import cp_model
+
+model = cp_model.CpModel()
+
+X = {}
+
+for b in batches:
+    for s in subjects:
+        for f in faculty:
+            # Faculty must be able to teach subject
+            if s not in faculty[f]:
+                continue
+
+            for r in rooms:
+                # Room must match subject type
+                if subjects[s]["type"] != rooms[r]["type"]:
+                    continue
+
+                for t in time_slots:
+                    X[(b, s, f, r, t)] = model.NewBoolVar(
+                        f"X_{b}_{s}_{f}_{r}_{t}"
+                    )
+
+
+for b in batches:
+    for s in subjects:
+        model.Add(
+            sum(
+                X[(b, s, f, r, t)]
+                for (bb, ss, f, r, t) in X
+                if bb == b and ss == s
+            )
+            == subjects[s]["weekly_slots"]
+        )
+
+for b in batches:
+    for t in time_slots:
+        model.Add(
+            sum(
+                X[(bb, s, f, r, tt)]
+                for (bb, s, f, r, tt) in X
+                if bb == b and tt == t
+            )
+            <= 1
+        )
+
+for f in faculty:
+    for t in time_slots:
+        model.Add(
+            sum(
+                X[(b, s, ff, r, tt)]
+                for (b, s, ff, r, tt) in X
+                if ff == f and tt == t
+            )
+            <= 1
+        )
 
 solver = cp_model.CpSolver()
 status = solver.Solve(model)
 
-# -------------------
-# Output
-# -------------------
-
 if status == cp_model.OPTIMAL:
-    for t in x:
-        if solver.Value(x[t]) == 1:
-            print(f"Class scheduled in slot {t}")
+    for (b, s, f, r, t), var in X.items():
+        if solver.Value(var) == 1:
+            print(
+                f"Batch {b} | Subject {s} | Faculty {f} | Room {r} | Slot {t}"
+            )
