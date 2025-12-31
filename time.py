@@ -1,8 +1,6 @@
 from ortools.sat.python import cp_model
 
-# -----------------------
 # Input Data
-# -----------------------
 
 batches = ["CST_T", "CSE_5"]
 
@@ -28,20 +26,30 @@ rooms = {
     "LAB1": {"type": "lab", "capacity": 30}
 }
 
+slots_per_day = 8
+days = 5
+lunch_slot_offsets = [3, 4, 5, 6]
+
+
 # 40 slots
 time_slots = list(range(40))
 
-# -----------------------
-# Model
-# -----------------------
 
+# Model
 model = cp_model.CpModel()
 
 X = {}
 
-# -----------------------
+
+L = {}
+for b in batches:
+    for d in range(days):
+        for s in lunch_slot_offsets:
+            t = d * slots_per_day + s
+            L[(b, d, t)] = model.NewBoolVar(f"LUNCH_{b}_{d}_{t}")
+
+
 # Decision Variables
-# -----------------------
 
 for b in batches:
     for s in batch_subjects[b]:
@@ -58,10 +66,7 @@ for b in batches:
                         f"X_{b}_{s}_{f}_{r}_{t}"
                     )
 
-# -----------------------
 # Constraints
-# -----------------------
-
 # 1. Subject weekly slots per batch
 for b in batches:
     for s in batch_subjects[b]:
@@ -86,6 +91,33 @@ for b in batches:
             <= 1
         )
 
+# 4.lunch 
+
+
+# exactly one lunch slot per day
+for b in batches:
+    for d in range(days):
+        model.Add(
+            sum(
+                L[(b, d, d * slots_per_day + s)]
+                for s in lunch_slot_offsets
+            ) == 1
+        )
+
+# lunch slot must be empty
+for b in batches:
+    for d in range(days):
+        for s in lunch_slot_offsets:
+            t = d * slots_per_day + s
+            model.Add(
+                sum(
+                    X[(bb, subj, f, r, tt)]
+                    for (bb, subj, f, r, tt) in X
+                    if bb == b and tt == t
+                ) == 0
+            ).OnlyEnforceIf(L[(b, d, t)])
+
+
 # 3. Faculty clash
 for f in faculty:
     for t in time_slots:
@@ -98,9 +130,7 @@ for f in faculty:
             <= 1
         )
 
-# -----------------------
 # Solve
-# -----------------------
 
 solver = cp_model.CpSolver()
 status = solver.Solve(model)
