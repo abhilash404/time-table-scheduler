@@ -1,19 +1,26 @@
-batches = ["CST_3"]
+from ortools.sat.python import cp_model
+
+# -----------------------
+# Input Data
+# -----------------------
+
+batches = ["CST_T", "CSE_5"]
 
 subjects = {
-    "NET": {
-        "type": "theory",
-        "weekly_slots": 2
-    },
-    "DBMS_LAB": {
-        "type": "lab",
-        "weekly_slots": 2
-    }
+    "NET": {"type": "theory", "weekly_slots": 3},
+    "DBMS_LAB": {"type": "lab", "weekly_slots": 2},
+    "compiler design": {"type": "theory", "weekly_slots": 3}
+}
+
+batch_subjects = {
+    "CST_T": ["NET", "DBMS_LAB"],
+    "CSE_5": ["NET", "compiler design"]
 }
 
 faculty = {
-    "Sarthak": ["NET"],
-    "Anita": ["DBMS_LAB"]
+    "Sarthak": ["NET","compiler design"],
+    "Anita": ["DBMS_LAB"],
+    "Rahul": ["compiler design"]
 }
 
 rooms = {
@@ -21,24 +28,28 @@ rooms = {
     "LAB1": {"type": "lab", "capacity": 30}
 }
 
-time_slots = [0, 1, 2, 3]
+# 40 slots
+time_slots = list(range(40))
 
-
-from ortools.sat.python import cp_model
+# -----------------------
+# Model
+# -----------------------
 
 model = cp_model.CpModel()
 
 X = {}
 
+# -----------------------
+# Decision Variables
+# -----------------------
+
 for b in batches:
-    for s in subjects:
+    for s in batch_subjects[b]:
         for f in faculty:
-            # Faculty must be able to teach subject
             if s not in faculty[f]:
                 continue
 
             for r in rooms:
-                # Room must match subject type
                 if subjects[s]["type"] != rooms[r]["type"]:
                     continue
 
@@ -47,18 +58,23 @@ for b in batches:
                         f"X_{b}_{s}_{f}_{r}_{t}"
                     )
 
+# -----------------------
+# Constraints
+# -----------------------
 
+# 1. Subject weekly slots per batch
 for b in batches:
-    for s in subjects:
+    for s in batch_subjects[b]:
         model.Add(
             sum(
-                X[(b, s, f, r, t)]
+                X[(bb, ss, f, r, t)]
                 for (bb, ss, f, r, t) in X
                 if bb == b and ss == s
             )
             == subjects[s]["weekly_slots"]
         )
 
+# 2. Batch clash
 for b in batches:
     for t in time_slots:
         model.Add(
@@ -70,6 +86,7 @@ for b in batches:
             <= 1
         )
 
+# 3. Faculty clash
 for f in faculty:
     for t in time_slots:
         model.Add(
@@ -81,10 +98,16 @@ for f in faculty:
             <= 1
         )
 
+# -----------------------
+# Solve
+# -----------------------
+
 solver = cp_model.CpSolver()
 status = solver.Solve(model)
 
-if status == cp_model.OPTIMAL:
+print("Solver status:", solver.StatusName(status))
+
+if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
     for (b, s, f, r, t), var in X.items():
         if solver.Value(var) == 1:
             print(
